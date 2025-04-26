@@ -8,7 +8,7 @@ Usage:
     python main.py
 """
 
-from src.main import main
+from src.ui.gui import run_gui
 
 if __name__ == "__main__":
-    main()
+    run_gui()

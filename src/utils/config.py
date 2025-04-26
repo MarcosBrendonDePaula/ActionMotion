@@ -2,19 +2,68 @@
 Configuration module for ActionMotion.
 """
 
+import json
+import os
+
 class Config:
-    """
-    Configuration class to store application settings.
-    """
+    """Configuration class for ActionMotion."""
     def __init__(self):
+        """Initialize configuration with default values."""
         # Detection settings
         self.enable_hand_detection = True
         self.enable_pose_detection = True
+        self.confidence_threshold = 0.8
         
         # Display settings
         self.show_fps = True
         self.show_landmarks = True
         self.show_actions = True
+        
+        # Camera settings
+        self.last_camera_index = 0
+        self.target_fps = 30  # Target FPS for camera capture
+        
+        # Load saved settings
+        self.load_settings()
+    
+    def save_settings(self):
+        """Save current settings to file."""
+        settings = {
+            'enable_hand_detection': self.enable_hand_detection,
+            'enable_pose_detection': self.enable_pose_detection,
+            'confidence_threshold': self.confidence_threshold,
+            'show_fps': self.show_fps,
+            'show_landmarks': self.show_landmarks,
+            'show_actions': self.show_actions,
+            'last_camera_index': self.last_camera_index,
+            'target_fps': self.target_fps
+        }
+        
+        settings_path = os.path.join('config', 'settings.json')
+        os.makedirs('config', exist_ok=True)
+        
+        with open(settings_path, 'w') as f:
+            json.dump(settings, f, indent=4)
+    
+    def load_settings(self):
+        """Load settings from file."""
+        settings_path = os.path.join('config', 'settings.json')
+        
+        if os.path.exists(settings_path):
+            try:
+                with open(settings_path, 'r') as f:
+                    settings = json.load(f)
+                
+                self.enable_hand_detection = settings.get('enable_hand_detection', self.enable_hand_detection)
+                self.enable_pose_detection = settings.get('enable_pose_detection', self.enable_pose_detection)
+                self.confidence_threshold = settings.get('confidence_threshold', self.confidence_threshold)
+                self.show_fps = settings.get('show_fps', self.show_fps)
+                self.show_landmarks = settings.get('show_landmarks', self.show_landmarks)
+                self.show_actions = settings.get('show_actions', self.show_actions)
+                self.last_camera_index = settings.get('last_camera_index', self.last_camera_index)
+                self.target_fps = settings.get('target_fps', self.target_fps)
+            except Exception as e:
+                print(f"Error loading settings: {e}")
         
         # Camera settings
         self.camera_index = 0
