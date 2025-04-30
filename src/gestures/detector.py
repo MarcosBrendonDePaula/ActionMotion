@@ -31,6 +31,22 @@ class GestureDetector:
         self.min_time_between_actions = config.time_between_actions
         self.last_execution = {}
         
+        # Gesture hold time tracking
+        self.gesture_first_detected = {}  # Dictionary to track when each gesture was first detected
+        self.current_detected_gestures = set()  # Set of currently detected gestures
+        
+        # Optimization: Indexed gesture data structures
+        # Index gestures by hand type for faster lookup
+        self.left_hand_gestures = {}
+        self.right_hand_gestures = {}
+        self.two_handed_gestures = {}
+        self.pose_gestures = {}
+        
+        # Cache for similarity calculations
+        self.similarity_cache = {}
+        self.cache_hits = 0
+        self.cache_misses = 0
+        
         # Create directory if it doesn't exist
         if not os.path.exists(gestures_directory):
             os.makedirs(gestures_directory)
@@ -41,9 +57,50 @@ class GestureDetector:
                 with open(self.gestures_file, 'r', encoding='utf-8') as f:
                     self.gestures = json.load(f)
                 print(f"Loaded {len(self.gestures)} gestures from file.")
+                # Build indexes after loading
+                self._build_gesture_indexes()
             except Exception as e:
                 print(f"Error loading gestures: {e}")
                 self.gestures = {}
+    
+    def _build_gesture_indexes(self):
+        """
+        Build optimized indexes for faster gesture lookup and comparison.
+        This creates separate dictionaries for left hand, right hand, two-handed, and pose gestures.
+        """
+        # Clear existing indexes
+        self.left_hand_gestures = {}
+        self.right_hand_gestures = {}
+        self.two_handed_gestures = {}
+        self.pose_gestures = {}
+        
+        # Categorize gestures by the type of input they require
+        for name, info in self.gestures.items():
+            capture = info.get("captura", {})
+            
+            # Check for hands
+            if "hands" in capture and capture["hands"]:
+                # Count left and right hands
+                left_hands = 0
+                right_hands = 0
+                
+                for hand in capture["hands"]:
+                    if hand.get("type") == "Left":
+                        left_hands += 1
+                    elif hand.get("type") == "Right":
+                        right_hands += 1
+                
+                # Categorize based on hands present
+                if left_hands > 0 and right_hands > 0:
+                    self.two_handed_gestures[name] = info
+                elif left_hands > 0:
+                    self.left_hand_gestures[name] = info
+                elif right_hands > 0:
+                    self.right_hand_gestures[name] = info
+            
+            # Check for pose
+            if "pose" in capture and capture["pose"]:
+                self.pose_gestures[name] = info
     
     def capture_gesture(self, hands, pose):
         """
@@ -173,11 +230,74 @@ class GestureDetector:
             with open(self.gestures_file, 'w', encoding='utf-8') as f:
                 json.dump(self.gestures, f, indent=2, ensure_ascii=False)
             
+            # Update indexes with the new gesture
+            self._update_gesture_in_indexes(name, self.gestures[name])
+            
+            # Clear similarity cache as the gesture set has changed
+            self.similarity_cache.clear()
+            
             print(f"Gesture '{name}' saved successfully!")
             return True
         except Exception as e:
             print(f"Error saving gesture: {e}")
             return False
+    
+    def _update_gesture_in_indexes(self, name, gesture_info):
+        """
+        Update a single gesture in the optimized indexes.
+        
+        Parameters:
+        - name: gesture name
+        - gesture_info: gesture information dictionary
+        """
+        # Remove from all indexes first (in case it's an update)
+        self._remove_gesture_from_indexes(name)
+        
+        # Add to appropriate indexes
+        capture = gesture_info.get("captura", {})
+        
+        # Check for hands
+        if "hands" in capture and capture["hands"]:
+            # Count left and right hands
+            left_hands = 0
+            right_hands = 0
+            
+            for hand in capture["hands"]:
+                if hand.get("type") == "Left":
+                    left_hands += 1
+                elif hand.get("type") == "Right":
+                    right_hands += 1
+            
+            # Categorize based on hands present
+            if left_hands > 0 and right_hands > 0:
+                self.two_handed_gestures[name] = gesture_info
+            elif left_hands > 0:
+                self.left_hand_gestures[name] = gesture_info
+            elif right_hands > 0:
+                self.right_hand_gestures[name] = gesture_info
+        
+        # Check for pose
+        if "pose" in capture and capture["pose"]:
+            self.pose_gestures[name] = gesture_info
+    
+    def _remove_gesture_from_indexes(self, name):
+        """
+        Remove a gesture from all optimized indexes.
+        
+        Parameters:
+        - name: gesture name to remove
+        """
+        if name in self.left_hand_gestures:
+            del self.left_hand_gestures[name]
+        
+        if name in self.right_hand_gestures:
+            del self.right_hand_gestures[name]
+        
+        if name in self.two_handed_gestures:
+            del self.two_handed_gestures[name]
+        
+        if name in self.pose_gestures:
+            del self.pose_gestures[name]
     
     def remove_gesture(self, name):
         """
@@ -191,7 +311,14 @@ class GestureDetector:
         """
         if name in self.gestures:
             try:
+                # Remove from main dictionary
                 del self.gestures[name]
+                
+                # Remove from indexes
+                self._remove_gesture_from_indexes(name)
+                
+                # Clear similarity cache as the gesture set has changed
+                self.similarity_cache.clear()
                 
                 # Update file
                 with open(self.gestures_file, 'w', encoding='utf-8') as f:
@@ -232,6 +359,9 @@ class GestureDetector:
             # Associate with the gesture
             self.gestures[gesture_name]["acao"] = action
             
+            # Update the gesture in the indexes
+            self._update_gesture_in_indexes(gesture_name, self.gestures[gesture_name])
+            
             # Save to file
             with open(self.gestures_file, 'w', encoding='utf-8') as f:
                 json.dump(self.gestures, f, indent=2, ensure_ascii=False)
@@ -263,6 +393,9 @@ class GestureDetector:
         try:
             # Remove action
             del self.gestures[gesture_name]["acao"]
+            
+            # Update the gesture in the indexes
+            self._update_gesture_in_indexes(gesture_name, self.gestures[gesture_name])
             
             # Save to file
             with open(self.gestures_file, 'w', encoding='utf-8') as f:
@@ -357,73 +490,129 @@ class GestureDetector:
         if not self.gestures:
             return detected_gestures
         
-        # For each registered gesture
-        for gesture_name, gesture_info in self.gestures.items():
+        # Ensure indexes are built
+        if not hasattr(self, 'left_hand_gestures') or not self.left_hand_gestures:
+            self._build_gesture_indexes()
+        
+        # Analyze available inputs to determine which gestures to check
+        left_hands = []
+        right_hands = []
+        
+        # Categorize hands by type and calculate directions
+        for hand in hands:
+            hand_type = hand.get("type", "")
+            
+            # Calculate direction if not already done
+            if "direction" not in hand:
+                hand["direction"] = self._calculate_hand_direction(hand["landmarks"])
+            
+            if hand_type == "Left":
+                left_hands.append(hand)
+            elif hand_type == "Right":
+                right_hands.append(hand)
+        
+        # Determine which gesture sets to check based on available inputs
+        gestures_to_check = {}
+        
+        # Check for two-handed gestures if both hands are present
+        if left_hands and right_hands:
+            gestures_to_check.update(self.two_handed_gestures)
+        
+        # Check for single-handed gestures
+        if left_hands:
+            gestures_to_check.update(self.left_hand_gestures)
+        
+        if right_hands:
+            gestures_to_check.update(self.right_hand_gestures)
+        
+        # Check for pose gestures if pose is present
+        if pose and self.pose_gestures:
+            gestures_to_check.update(self.pose_gestures)
+        
+        # Keep track of currently detected gestures for this frame
+        current_frame_gestures = set()
+        
+        # Process each potential gesture
+        for gesture_name, gesture_info in gestures_to_check.items():
             capture = gesture_info.get("captura", {})
             best_similarity = 0
             has_match = False
             
             # Check hand similarity if the gesture requires hands
             if "hands" in capture and capture["hands"]:
-                # If the gesture requires hands but no hands are detected, skip this gesture
-                if not hands:
-                    continue
+                for captured_hand in capture["hands"]:
+                    captured_hand_type = captured_hand.get("type", "")
+                    captured_direction = captured_hand.get("direction", "unknown")
                     
-                for current_hand in hands:
-                    for captured_hand in capture["hands"]:
-                        # Check if they are the same type (left/right)
-                        current_hand_type = current_hand.get("type", "")
-                        captured_hand_type = captured_hand.get("type", "")
+                    # Select the appropriate hand list based on type
+                    current_hands = left_hands if captured_hand_type == "Left" else right_hands
+                    
+                    for current_hand in current_hands:
+                        current_direction = current_hand.get("direction", "unknown")
                         
-                        # Only compare if hand types match (Left with Left, Right with Right)
-                        if current_hand_type == captured_hand_type:
-                            # Calculate direction for current hand if not already done
-                            if "direction" not in current_hand:
-                                current_hand["direction"] = self._calculate_hand_direction(current_hand["landmarks"])
-                            
-                            # Get the captured hand direction
-                            captured_direction = captured_hand.get("direction", "unknown")
-                            current_direction = current_hand.get("direction", "unknown")
-                            
+                        # Create a cache key for this comparison
+                        # Use a tuple of landmark coordinates as part of the key
+                        landmarks_hash = tuple(tuple(lm) for lm in current_hand["landmarks"])
+                        captured_hash = tuple(tuple(lm) for lm in captured_hand["landmarks"])
+                        cache_key = (landmarks_hash, captured_hash, "hand")
+                        
+                        # Check if we have this calculation cached
+                        if cache_key in self.similarity_cache:
+                            self.cache_hits += 1
+                            similarity = self.similarity_cache[cache_key]
+                        else:
+                            self.cache_misses += 1
                             # Calculate landmark similarity
                             similarity = self.calculate_similarity(
                                 current_hand["landmarks"], 
                                 captured_hand["landmarks"],
                                 "hand"
                             )
+                            # Cache the result
+                            self.similarity_cache[cache_key] = similarity
+                        
+                        # Store the similarity score if it's above the threshold
+                        if similarity >= similarity_threshold:
+                            # Apply direction matching
+                            direction_match = captured_direction == "unknown" or current_direction == "unknown" or captured_direction == current_direction
                             
-                            # Store the similarity score if it's above the threshold
-                            if similarity >= similarity_threshold:
-                                # Apply direction matching
-                                direction_match = captured_direction == "unknown" or current_direction == "unknown" or captured_direction == current_direction
-                                
-                                # If directions don't match, reduce similarity
+                            # If directions don't match, reduce similarity
+                            if not direction_match:
+                                similarity *= 0.7  # Reduce similarity by 30% if directions don't match
+                            
+                            best_similarity = max(best_similarity, similarity)
+                            
+                            # Only consider it a match if it's above the confidence threshold
+                            if similarity >= config.confidence_threshold:
+                                has_match = True
+                                direction_info = f" - direction: {current_direction}"
                                 if not direction_match:
-                                    similarity *= 0.7  # Reduce similarity by 30% if directions don't match
-                                
-                                best_similarity = max(best_similarity, similarity)
-                                
-                                # Only consider it a match if it's above the confidence threshold
-                                if similarity >= config.confidence_threshold:
-                                    has_match = True
-                                    direction_info = f" - direction: {current_direction}"
-                                    if not direction_match:
-                                        direction_info += f" (expected: {captured_direction})"
-                                    print(f"Hand match: {gesture_name} - {current_hand_type} hand{direction_info} - similarity: {similarity:.2f}")
-                                else:
-                                    print(f"Low confidence match: {gesture_name} - {current_hand_type} hand - similarity: {similarity:.2f}")
+                                    direction_info += f" (expected: {captured_direction})"
+                                print(f"Hand match: {gesture_name} - {captured_hand_type} hand{direction_info} - similarity: {similarity:.2f}")
+                            else:
+                                print(f"Low confidence match: {gesture_name} - {captured_hand_type} hand - similarity: {similarity:.2f}")
             
             # Check pose similarity if the gesture requires pose
-            if "pose" in capture and capture["pose"]:
-                # If the gesture requires pose but no pose is detected, skip this gesture
-                if not pose:
-                    continue
-                    
-                pose_similarity = self.calculate_similarity(
-                    pose, 
-                    capture["pose"],
-                    "pose"
-                )
+            if "pose" in capture and capture["pose"] and pose:
+                # Create a cache key for pose comparison
+                pose_hash = tuple(tuple(lm) for lm in pose)
+                captured_pose_hash = tuple(tuple(lm) for lm in capture["pose"])
+                pose_cache_key = (pose_hash, captured_pose_hash, "pose")
+                
+                # Check if we have this calculation cached
+                if pose_cache_key in self.similarity_cache:
+                    self.cache_hits += 1
+                    pose_similarity = self.similarity_cache[pose_cache_key]
+                else:
+                    self.cache_misses += 1
+                    pose_similarity = self.calculate_similarity(
+                        pose, 
+                        capture["pose"],
+                        "pose"
+                    )
+                    # Cache the result
+                    self.similarity_cache[pose_cache_key] = pose_similarity
+                
                 # Store the similarity score if it's above the threshold
                 if pose_similarity >= similarity_threshold:
                     best_similarity = max(best_similarity, pose_similarity)
@@ -436,14 +625,43 @@ class GestureDetector:
             
             # Only consider the gesture detected if we have a match
             if has_match and best_similarity >= similarity_threshold:
+                # Add to the set of currently detected gestures
+                current_frame_gestures.add(gesture_name)
+                
+                # Check if this is the first time we're detecting this gesture
+                current_time = time.time()
+                if gesture_name not in self.gesture_first_detected:
+                    self.gesture_first_detected[gesture_name] = current_time
+                    hold_time = 0
+                else:
+                    hold_time = current_time - self.gesture_first_detected[gesture_name]
+                
+                # Add to detected gestures with hold time information
                 detected_gestures[gesture_name] = {
                     "descricao": gesture_info["descricao"],
                     "similaridade": best_similarity,
-                    "acao": gesture_info.get("acao", None)
+                    "acao": gesture_info.get("acao", None),
+                    "hold_time": hold_time
                 }
                 
-                # Execute associated action, if it exists
-                self._execute_gesture_action(gesture_name, gesture_info.get("acao", None))
+                # Execute associated action only if the gesture has been held long enough
+                if hold_time >= config.gesture_hold_time:
+                    self._execute_gesture_action(gesture_name, gesture_info.get("acao", None))
+        
+        # Clean up gesture tracking for gestures that are no longer detected
+        gestures_to_remove = set(self.gesture_first_detected.keys()) - current_frame_gestures
+        for gesture_name in gestures_to_remove:
+            del self.gesture_first_detected[gesture_name]
+        
+        # Update the set of currently detected gestures
+        self.current_detected_gestures = current_frame_gestures
+        
+        # Periodically clear the cache to prevent memory issues
+        if len(self.similarity_cache) > 1000:
+            self.similarity_cache.clear()
+            print(f"Cache stats - Hits: {self.cache_hits}, Misses: {self.cache_misses}")
+            self.cache_hits = 0
+            self.cache_misses = 0
         
         return detected_gestures
     

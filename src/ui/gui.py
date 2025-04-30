@@ -65,6 +65,10 @@ class ActionMotionGUI:
         # Create sidebar
         self.sidebar, self.gesture_frame = create_sidebar(self.root, self)
         
+        # Initialize sidebar visibility based on config
+        if not config.show_gesture_sidebar:
+            self.sidebar.pack_forget()
+        
         # Create status bar
         self.status_bar, self.status_label, self.fps_label, self.camera_label_status = create_status_bar(self.root, self.camera.camera_index)
         
@@ -152,6 +156,34 @@ class ActionMotionGUI:
                                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
                     y_offset += 30
                     
+                    # Show hold time information
+                    if "hold_time" in info:
+                        hold_time = info["hold_time"]
+                        required_time = config.gesture_hold_time
+                        progress = min(1.0, hold_time / required_time)
+                        
+                        # Display hold time status
+                        hold_status = "Ready" if hold_time >= required_time else f"Hold: {hold_time:.1f}s / {required_time:.1f}s"
+                        cv2.putText(image, f"  {hold_status}", (30, y_offset), 
+                                   cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 1)
+                        y_offset += 25
+                        
+                        # Draw progress bar
+                        bar_length = 200
+                        bar_height = 10
+                        bar_x = 30
+                        bar_y = y_offset - 5
+                        
+                        # Draw background
+                        cv2.rectangle(image, (bar_x, bar_y), (bar_x + bar_length, bar_y + bar_height), (100, 100, 100), -1)
+                        
+                        # Draw progress
+                        progress_width = int(bar_length * progress)
+                        progress_color = (0, 255, 0) if progress >= 1.0 else (0, 255, 255)
+                        cv2.rectangle(image, (bar_x, bar_y), (bar_x + progress_width, bar_y + bar_height), progress_color, -1)
+                        
+                        y_offset += 15
+                    
                     # If should show action information and has associated action
                     if config.show_actions and info.get("acao"):
                         action = info["acao"]
@@ -210,13 +242,20 @@ class ActionMotionGUI:
     
     def _update_gesture_display(self, gestures):
         """Update the gesture display in the sidebar."""
+        # Store the current gestures for later reference
+        self.current_gestures = gestures
+        
         # Clear existing widgets
         for widget in self.gesture_frame.winfo_children():
             widget.destroy()
         
+        # Create a frame for the gesture information
+        info_frame = ttk.Frame(self.gesture_frame)
+        info_frame.pack(fill=tk.X, expand=True)
+        
         # Add gesture information
         for name, info in gestures.items():
-            frame = ttk.Frame(self.gesture_frame)
+            frame = ttk.Frame(info_frame)
             frame.pack(fill=tk.X, pady=2)
             
             # Get hand information including direction
@@ -242,21 +281,42 @@ class ActionMotionGUI:
                          text=f"Hand info: {', '.join(hand_info)}",
                          foreground="blue").pack(anchor=tk.W)
             
+            # Display hold time if available
+            if "hold_time" in info:
+                hold_time = info["hold_time"]
+                required_time = config.gesture_hold_time
+                progress = min(1.0, hold_time / required_time)
+                
+                # Create a frame for the progress bar
+                progress_frame = ttk.Frame(frame)
+                progress_frame.pack(fill=tk.X, pady=2)
+                
+                # Create a label for the hold time
+                hold_status = "Ready" if hold_time >= required_time else f"Hold: {hold_time:.1f}s / {required_time:.1f}s"
+                ttk.Label(progress_frame, text=hold_status).pack(side=tk.LEFT, padx=5)
+                
+                # Create a progress bar
+                progress_bar = ttk.Progressbar(progress_frame, length=100, mode='determinate', value=progress*100)
+                progress_bar.pack(side=tk.RIGHT, padx=5, fill=tk.X, expand=True)
+            
             if info.get("acao"):
                 action = info["acao"]
                 ttk.Label(frame, 
                          text=f"Action: {action['tipo']} - {str(action['parametros'])}",
                          foreground="purple").pack(anchor=tk.W)
             
-            ttk.Separator(self.gesture_frame).pack(fill=tk.X, pady=5)
+            ttk.Separator(info_frame).pack(fill=tk.X, pady=5)
     
     def _clear_gesture_display(self):
         """Clear the gesture display in the sidebar."""
-        for widget in self.gesture_frame.winfo_children():
-            widget.destroy()
-        
-        self.no_gestures_label = ttk.Label(self.gesture_frame, text="No gestures detected")
-        self.no_gestures_label.pack(anchor=tk.W)
+        # Only clear if we have no current gestures
+        if not hasattr(self, 'current_gestures') or not self.current_gestures:
+            for widget in self.gesture_frame.winfo_children():
+                widget.destroy()
+            
+            # Add a simple label
+            self.no_gestures_label = ttk.Label(self.gesture_frame, text="No gestures detected")
+            self.no_gestures_label.pack(anchor=tk.W, padx=5, pady=10)
     
     def toggle_capture_mode(self):
         """Toggle capture mode on/off."""

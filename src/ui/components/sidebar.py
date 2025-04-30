@@ -17,12 +17,26 @@ def create_sidebar(root, gui):
     # Import config here to avoid circular imports
     from src.utils.config import config
     
+    # Create main sidebar frame
     sidebar = ttk.Frame(root, width=300)
     sidebar.pack(side=tk.RIGHT, fill=tk.Y, padx=10, pady=10)
     
+    # Create a canvas with scrollbar for the sidebar content
+    canvas = tk.Canvas(sidebar, width=280)
+    scrollbar = ttk.Scrollbar(sidebar, orient="vertical", command=canvas.yview)
+    
+    # Configure the canvas
+    canvas.configure(yscrollcommand=scrollbar.set)
+    canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+    scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+    
+    # Create a frame inside the canvas for all sidebar content
+    sidebar_content = ttk.Frame(canvas)
+    canvas.create_window((0, 0), window=sidebar_content, anchor="nw", width=280)
+    
     # Detected gestures section
-    ttk.Label(sidebar, text="Detected Gestures", font=("Arial", 12, "bold")).pack(anchor=tk.W, pady=(0, 5))
-    gesture_frame = ttk.Frame(sidebar)
+    ttk.Label(sidebar_content, text="Detected Gestures", font=("Arial", 12, "bold")).pack(anchor=tk.W, pady=(0, 5))
+    gesture_frame = ttk.Frame(sidebar_content)
     gesture_frame.pack(fill=tk.X, pady=5)
     
     # No gestures detected initially
@@ -30,11 +44,11 @@ def create_sidebar(root, gui):
     no_gestures_label.pack(anchor=tk.W)
     
     # Configuration section
-    ttk.Separator(sidebar).pack(fill=tk.X, pady=10)
-    ttk.Label(sidebar, text="Configuration", font=("Arial", 12, "bold")).pack(anchor=tk.W, pady=(0, 5))
+    ttk.Separator(sidebar_content).pack(fill=tk.X, pady=10)
+    ttk.Label(sidebar_content, text="Configuration", font=("Arial", 12, "bold")).pack(anchor=tk.W, pady=(0, 5))
     
     # Detection settings
-    detection_frame = ttk.LabelFrame(sidebar, text="Detection")
+    detection_frame = ttk.LabelFrame(sidebar_content, text="Detection")
     detection_frame.pack(fill=tk.X, pady=5)
     
     ttk.Checkbutton(detection_frame, text="Hand Detection", 
@@ -46,7 +60,7 @@ def create_sidebar(root, gui):
                    command=lambda: toggle_pose_detection(gui)).pack(anchor=tk.W, padx=5, pady=2)
     
     # Display settings
-    display_frame = ttk.LabelFrame(sidebar, text="Display")
+    display_frame = ttk.LabelFrame(sidebar_content, text="Display")
     display_frame.pack(fill=tk.X, pady=5)
     
     ttk.Checkbutton(display_frame, text="Show FPS", 
@@ -61,8 +75,12 @@ def create_sidebar(root, gui):
                    variable=gui.show_actions_var,
                    command=lambda: toggle_actions_display(gui)).pack(anchor=tk.W, padx=5, pady=2)
     
+    ttk.Checkbutton(display_frame, text="Show Gesture Sidebar", 
+                   variable=gui.show_gesture_sidebar_var,
+                   command=lambda: toggle_gesture_sidebar(gui)).pack(anchor=tk.W, padx=5, pady=2)
+    
     # Confidence threshold
-    threshold_frame = ttk.LabelFrame(sidebar, text="Confidence Threshold")
+    threshold_frame = ttk.LabelFrame(sidebar_content, text="Confidence Threshold")
     threshold_frame.pack(fill=tk.X, pady=5)
     
     gui.threshold_scale = ttk.Scale(threshold_frame, 
@@ -75,11 +93,25 @@ def create_sidebar(root, gui):
                                    text=f"Threshold: {config.confidence_threshold:.2f}")
     gui.threshold_label.pack(anchor=tk.W, padx=5, pady=(0, 5))
     
-    # Quick actions
-    ttk.Separator(sidebar).pack(fill=tk.X, pady=10)
-    ttk.Label(sidebar, text="Quick Actions", font=("Arial", 12, "bold")).pack(anchor=tk.W, pady=(0, 5))
+    # Gesture hold time
+    hold_time_frame = ttk.LabelFrame(sidebar_content, text="Gesture Hold Time")
+    hold_time_frame.pack(fill=tk.X, pady=5)
     
-    actions_frame = ttk.Frame(sidebar)
+    gui.hold_time_scale = ttk.Scale(hold_time_frame, 
+                                   from_=0.1, to=3.0, 
+                                   value=config.gesture_hold_time,
+                                   command=lambda value: update_hold_time(gui, value))
+    gui.hold_time_scale.pack(fill=tk.X, padx=5, pady=5)
+    
+    gui.hold_time_label = ttk.Label(hold_time_frame, 
+                                   text=f"Hold Time: {config.gesture_hold_time:.1f}s")
+    gui.hold_time_label.pack(anchor=tk.W, padx=5, pady=(0, 5))
+    
+    # Quick actions
+    ttk.Separator(sidebar_content).pack(fill=tk.X, pady=10)
+    ttk.Label(sidebar_content, text="Quick Actions", font=("Arial", 12, "bold")).pack(anchor=tk.W, pady=(0, 5))
+    
+    actions_frame = ttk.Frame(sidebar_content)
     actions_frame.pack(fill=tk.X, pady=5)
     
     ttk.Button(actions_frame, text="Capture Gesture", 
@@ -90,6 +122,16 @@ def create_sidebar(root, gui):
     
     ttk.Button(actions_frame, text="List Gestures", 
               command=lambda: gui.gesture_dialogs.show_list_dialog()).pack(fill=tk.X, pady=2)
+    
+    # Update the canvas scroll region when the sidebar content changes
+    sidebar_content.update_idletasks()
+    canvas.config(scrollregion=canvas.bbox("all"))
+    
+    # Bind mouse wheel to scroll
+    def _on_mousewheel(event):
+        canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+    
+    canvas.bind_all("<MouseWheel>", _on_mousewheel)
     
     return sidebar, gesture_frame
 
@@ -118,8 +160,26 @@ def toggle_actions_display(gui):
     config.toggle_actions_display()
     gui.status_label.config(text=f"Actions display: {'enabled' if config.show_actions else 'disabled'}")
 
+def toggle_gesture_sidebar(gui):
+    """Toggle gesture sidebar display on/off."""
+    config.toggle_gesture_sidebar()
+    gui.status_label.config(text=f"Gesture sidebar: {'enabled' if config.show_gesture_sidebar else 'disabled'}")
+    
+    # Update the sidebar visibility
+    if config.show_gesture_sidebar:
+        gui.sidebar.pack(side=tk.RIGHT, fill=tk.Y, padx=10, pady=10)
+    else:
+        gui.sidebar.pack_forget()
+
 def update_confidence_threshold(gui, value):
     """Update confidence threshold."""
     threshold = float(value)
     config.set_confidence_threshold(threshold)
     gui.threshold_label.config(text=f"Threshold: {config.confidence_threshold:.2f}")
+
+def update_hold_time(gui, value):
+    """Update gesture hold time."""
+    hold_time = float(value)
+    config.set_gesture_hold_time(hold_time)
+    gui.hold_time_label.config(text=f"Hold Time: {config.gesture_hold_time:.1f}s")
+    gui.status_label.config(text=f"Gesture hold time set to {config.gesture_hold_time:.1f} seconds")

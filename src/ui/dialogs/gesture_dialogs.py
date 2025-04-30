@@ -210,8 +210,28 @@ class GestureDialogs:
                 
                 ttk.Label(frame, text=f"{name}: {description} [{action_status}]").pack(side=tk.LEFT, padx=5)
                 
-                ttk.Button(frame, text="Edit", 
-                          command=lambda n=name: [selection_dialog.destroy(), self.show_edit_dialog(n)]).pack(side=tk.RIGHT, padx=5)
+                # Button frame for edit and delete buttons
+                button_frame = ttk.Frame(frame)
+                button_frame.pack(side=tk.RIGHT)
+                
+                # Edit button
+                ttk.Button(button_frame, text="Edit", 
+                          command=lambda n=name: [selection_dialog.destroy(), self.show_edit_dialog(n)]).pack(side=tk.LEFT, padx=2)
+                
+                # Delete button (only shown if the gesture has an action)
+                if has_action:
+                    def remove_action_func(gesture_name=name):
+                        if messagebox.askyesno("Confirm Removal", 
+                                              f"Are you sure you want to remove the action from gesture '{gesture_name}'?"):
+                            if self.detector.remove_action(gesture_name):
+                                messagebox.showinfo("Success", f"Action removed from gesture '{gesture_name}'")
+                                selection_dialog.destroy()
+                                self.show_edit_dialog()  # Refresh the dialog
+                            else:
+                                messagebox.showerror("Error", f"Failed to remove action from gesture '{gesture_name}'")
+                    
+                    ttk.Button(button_frame, text="Delete", 
+                              command=lambda n=name: remove_action_func(n)).pack(side=tk.LEFT, padx=2)
             
             # Add cancel button
             button_frame = ttk.Frame(selection_dialog)

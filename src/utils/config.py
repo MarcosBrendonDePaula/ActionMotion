@@ -18,6 +18,7 @@ class Config:
         self.show_fps = True
         self.show_landmarks = True
         self.show_actions = True
+        self.show_gesture_sidebar = True  # New setting to control gesture sidebar visibility
         
         # Camera settings
         self.last_camera_index = 0
@@ -35,8 +36,11 @@ class Config:
             'show_fps': self.show_fps,
             'show_landmarks': self.show_landmarks,
             'show_actions': self.show_actions,
+            'show_gesture_sidebar': self.show_gesture_sidebar,
             'last_camera_index': self.last_camera_index,
-            'target_fps': self.target_fps
+            'target_fps': self.target_fps,
+            'time_between_actions': self.time_between_actions,
+            'gesture_hold_time': self.gesture_hold_time
         }
         
         settings_path = os.path.join('config', 'settings.json')
@@ -60,8 +64,11 @@ class Config:
                 self.show_fps = settings.get('show_fps', self.show_fps)
                 self.show_landmarks = settings.get('show_landmarks', self.show_landmarks)
                 self.show_actions = settings.get('show_actions', self.show_actions)
+                self.show_gesture_sidebar = settings.get('show_gesture_sidebar', self.show_gesture_sidebar)
                 self.last_camera_index = settings.get('last_camera_index', self.last_camera_index)
                 self.target_fps = settings.get('target_fps', self.target_fps)
+                self.time_between_actions = settings.get('time_between_actions', self.time_between_actions)
+                self.gesture_hold_time = settings.get('gesture_hold_time', self.gesture_hold_time)
             except Exception as e:
                 print(f"Error loading settings: {e}")
         
@@ -78,6 +85,7 @@ class Config:
         
         # Action settings
         self.time_between_actions = 1.0  # seconds
+        self.gesture_hold_time = 1.0  # seconds to hold a gesture before executing action
     
     def toggle_hand_detection(self):
         """Toggle hand detection on/off."""
@@ -103,6 +111,11 @@ class Config:
         """Toggle actions display on/off."""
         self.show_actions = not self.show_actions
         return self.show_actions
+    
+    def toggle_gesture_sidebar(self):
+        """Toggle gesture sidebar display on/off."""
+        self.show_gesture_sidebar = not self.show_gesture_sidebar
+        return self.show_gesture_sidebar
     
     def set_camera_index(self, index):
         """Set camera index."""
@@ -130,6 +143,11 @@ class Config:
         self.time_between_actions = max(0.1, seconds)
         return self.time_between_actions
     
+    def set_gesture_hold_time(self, seconds):
+        """Set time required to hold a gesture before executing action."""
+        self.gesture_hold_time = max(0.1, seconds)
+        return self.gesture_hold_time
+    
     def get_status(self):
         """Get a dictionary with the current configuration status."""
         return {
@@ -138,11 +156,13 @@ class Config:
             "FPS Display": "Enabled" if self.show_fps else "Disabled",
             "Landmarks Display": "Enabled" if self.show_landmarks else "Disabled",
             "Actions Display": "Enabled" if self.show_actions else "Disabled",
+            "Gesture Sidebar": "Enabled" if self.show_gesture_sidebar else "Disabled",
             "Camera Index": self.camera_index,
             "Window Size": f"{self.window_width}x{self.window_height}",
             "Similarity Threshold": f"{self.similarity_threshold:.2f}",
             "Confidence Threshold": f"{self.confidence_threshold:.2f}",
-            "Time Between Actions": f"{self.time_between_actions:.1f}s"
+            "Time Between Actions": f"{self.time_between_actions:.1f}s",
+            "Gesture Hold Time": f"{self.gesture_hold_time:.1f}s"
         }
 
 # Create a global configuration instance

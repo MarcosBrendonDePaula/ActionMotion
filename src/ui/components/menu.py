@@ -63,6 +63,11 @@ def create_menu(gui):
     display_menu.add_checkbutton(label="Show Actions", 
                                 variable=gui.show_actions_var,
                                 command=lambda: toggle_actions_display(gui))
+    
+    gui.show_gesture_sidebar_var = tk.BooleanVar(value=config.show_gesture_sidebar)
+    display_menu.add_checkbutton(label="Show Gesture Sidebar", 
+                                variable=gui.show_gesture_sidebar_var,
+                                command=lambda: toggle_gesture_sidebar(gui))
     settings_menu.add_cascade(label="Display", menu=display_menu)
     
     # Confidence threshold
@@ -108,3 +113,15 @@ def toggle_actions_display(gui):
     from src.utils.config import config
     config.toggle_actions_display()
     gui.status_label.config(text=f"Actions display: {'enabled' if config.show_actions else 'disabled'}")
+
+def toggle_gesture_sidebar(gui):
+    """Toggle gesture sidebar display on/off."""
+    from src.utils.config import config
+    config.toggle_gesture_sidebar()
+    gui.status_label.config(text=f"Gesture sidebar: {'enabled' if config.show_gesture_sidebar else 'disabled'}")
+    
+    # Update the sidebar visibility
+    if config.show_gesture_sidebar:
+        gui.sidebar.pack(side=tk.RIGHT, fill=tk.Y, padx=10, pady=10)
+    else:
+        gui.sidebar.pack_forget()
