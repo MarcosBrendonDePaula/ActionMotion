@@ -58,21 +58,95 @@ class GestureDetector:
         """
         capture = {
             "hands": [],
-            "pose": []
+            "pose": [],
+            "directions": []
         }
         
         # Capture hands state
         for hand in hands:
+            # Calculate direction the hand is pointing
+            direction = self._calculate_hand_direction(hand["landmarks"])
+            
             capture["hands"].append({
                 "type": hand.get("type", "Unknown"),
-                "landmarks": hand["landmarks"]
+                "landmarks": hand["landmarks"],
+                "direction": direction
+            })
+            
+            # Add to overall directions list
+            capture["directions"].append({
+                "hand_type": hand.get("type", "Unknown"),
+                "direction": direction
             })
         
         # Capture pose
         if pose:
             capture["pose"] = pose
             
+            # Calculate body direction if possible
+            body_direction = self._calculate_body_direction(pose)
+            if body_direction:
+                capture["directions"].append({
+                    "type": "body",
+                    "direction": body_direction
+                })
+            
         return capture
+    
+    def _calculate_hand_direction(self, landmarks):
+        """
+        Calculate the direction a hand is pointing based on landmarks.
+        
+        Parameters:
+        - landmarks: list of hand landmarks
+        
+        Returns:
+        - direction as a string: "up", "down", "left", "right", "forward", or "unknown"
+        """
+        # Find wrist (landmark 0) and middle finger tip (landmark 12)
+        wrist = None
+        middle_tip = None
+        
+        for lm in landmarks:
+            if lm[0] == 0:  # Wrist
+                wrist = (lm[1], lm[2])
+            elif lm[0] == 12:  # Middle finger tip
+                middle_tip = (lm[1], lm[2])
+        
+        if not wrist or not middle_tip:
+            return "unknown"
+        
+        # Calculate vector from wrist to middle finger tip
+        dx = middle_tip[0] - wrist[0]
+        dy = middle_tip[1] - wrist[1]
+        
+        # Determine direction based on the vector
+        # Note: In image coordinates, y increases downward
+        if abs(dx) > abs(dy) * 2:
+            # Horizontal movement is dominant
+            return "right" if dx > 0 else "left"
+        elif abs(dy) > abs(dx) * 2:
+            # Vertical movement is dominant
+            return "down" if dy > 0 else "up"
+        else:
+            # If neither horizontal nor vertical is dominant, it might be pointing forward
+            return "forward"
+    
+    def _calculate_body_direction(self, pose_landmarks):
+        """
+        Calculate the direction the body is facing based on pose landmarks.
+        
+        Parameters:
+        - pose_landmarks: list of pose landmarks
+        
+        Returns:
+        - direction as a string or None if can't determine
+        """
+        # This is a simplified implementation
+        # A more sophisticated approach would use shoulder positions, hip positions, etc.
+        
+        # For now, we'll return None as this requires more complex analysis
+        return None
     
     def save_gesture(self, name, description, capture, action=None):
         """
@@ -303,18 +377,39 @@ class GestureDetector:
                         
                         # Only compare if hand types match (Left with Left, Right with Right)
                         if current_hand_type == captured_hand_type:
+                            # Calculate direction for current hand if not already done
+                            if "direction" not in current_hand:
+                                current_hand["direction"] = self._calculate_hand_direction(current_hand["landmarks"])
+                            
+                            # Get the captured hand direction
+                            captured_direction = captured_hand.get("direction", "unknown")
+                            current_direction = current_hand.get("direction", "unknown")
+                            
+                            # Calculate landmark similarity
                             similarity = self.calculate_similarity(
                                 current_hand["landmarks"], 
                                 captured_hand["landmarks"],
                                 "hand"
                             )
+                            
                             # Store the similarity score if it's above the threshold
                             if similarity >= similarity_threshold:
+                                # Apply direction matching
+                                direction_match = captured_direction == "unknown" or current_direction == "unknown" or captured_direction == current_direction
+                                
+                                # If directions don't match, reduce similarity
+                                if not direction_match:
+                                    similarity *= 0.7  # Reduce similarity by 30% if directions don't match
+                                
                                 best_similarity = max(best_similarity, similarity)
+                                
                                 # Only consider it a match if it's above the confidence threshold
                                 if similarity >= config.confidence_threshold:
                                     has_match = True
-                                    print(f"Hand match: {gesture_name} - {current_hand_type} hand - similarity: {similarity:.2f}")
+                                    direction_info = f" - direction: {current_direction}"
+                                    if not direction_match:
+                                        direction_info += f" (expected: {captured_direction})"
+                                    print(f"Hand match: {gesture_name} - {current_hand_type} hand{direction_info} - similarity: {similarity:.2f}")
                                 else:
                                     print(f"Low confidence match: {gesture_name} - {current_hand_type} hand - similarity: {similarity:.2f}")
             

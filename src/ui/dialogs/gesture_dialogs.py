@@ -136,15 +136,16 @@ class GestureDialogs:
                          text=f"Action: {action['tipo']} - {str(action['parametros'])}",
                          foreground="purple").pack(anchor=tk.W)
             
-            # Determine hand type if available
-            hand_types = []
-            for hand_info in self.detector.gestures.get(name, {}).get("captura", {}).get("hands", []):
-                if hand_info.get("type"):
-                    hand_types.append(hand_info.get("type"))
+            # Determine hand type and direction if available
+            hand_info = []
+            for hand_data in self.detector.gestures.get(name, {}).get("captura", {}).get("hands", []):
+                hand_type = hand_data.get("type", "Unknown")
+                direction = hand_data.get("direction", "unknown")
+                hand_info.append(f"{hand_type} hand ({direction})")
             
-            if hand_types:
+            if hand_info:
                 ttk.Label(frame, 
-                         text=f"Hand types: {', '.join(hand_types)}").pack(anchor=tk.W)
+                         text=f"Hand info: {', '.join(hand_info)}").pack(anchor=tk.W)
             
             ttk.Separator(scrollable_frame).pack(fill=tk.X, pady=5)
         
@@ -414,6 +415,29 @@ class GestureDialogs:
                                   font=("Arial", 10, "italic"))
             key_result.pack(pady=10)
             
+            # Use the keyboard listener from utils
+            from src.utils.keyboard_listener import get_key_press
+            
+            def capture_thread():
+                # Run in a separate thread to not block the UI
+                key_name = get_key_press("")  # Empty prompt to avoid console output
+                
+                # Update UI in the main thread
+                key_dialog.after(0, lambda: update_key_result(key_name))
+            
+            def update_key_result(key_name):
+                captured_key[0] = key_name
+                key_result.config(text=f"Captured: {key_name}")
+                key_value.config(text=key_name, foreground="black")
+                key_dialog.after(1000, key_dialog.destroy)
+            
+            # Start capture in a separate thread
+            import threading
+            capture_thread = threading.Thread(target=capture_thread)
+            capture_thread.daemon = True
+            capture_thread.start()
+            
+            # Also keep the original event binding as a fallback
             def on_key_press(event):
                 key_name = event.keysym
                 captured_key[0] = key_name

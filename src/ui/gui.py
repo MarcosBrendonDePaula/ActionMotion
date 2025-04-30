@@ -131,18 +131,23 @@ class ActionMotionGUI:
                 
                 y_offset = 150
                 for name, info in detected_gestures.items():
-                    # Check which hand type was used for this gesture
-                    hand_type = ""
+                    # Check which hand type and direction was used for this gesture
+                    hand_info = ""
                     if name in self.detector.gestures and "captura" in self.detector.gestures[name] and "hands" in self.detector.gestures[name]["captura"] and self.detector.gestures[name]["captura"]["hands"]:
                         for hand in hands:
+                            # Calculate direction if not already done
+                            if "direction" not in hand:
+                                hand["direction"] = self.detector._calculate_hand_direction(hand["landmarks"])
+                                
                             for captured_hand in self.detector.gestures[name]["captura"]["hands"]:
                                 if hand.get("type", "") == captured_hand.get("type", ""):
-                                    hand_type = f" ({hand.get('type', '')} hand)"
+                                    direction = hand.get("direction", "unknown")
+                                    hand_info = f" ({hand.get('type', '')} hand, {direction})"
                                     break
-                            if hand_type:
+                            if hand_info:
                                 break
                     
-                    text = f"Gesture: {name} - {info['descricao']}{hand_type} ({info['similaridade']:.2f})"
+                    text = f"Gesture: {name} - {info['descricao']}{hand_info} ({info['similaridade']:.2f})"
                     cv2.putText(image, text, (10, y_offset), 
                                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
                     y_offset += 30
@@ -214,19 +219,28 @@ class ActionMotionGUI:
             frame = ttk.Frame(self.gesture_frame)
             frame.pack(fill=tk.X, pady=2)
             
-            # Determine hand type if available
-            hand_type = ""
-            for hand_info in self.detector.gestures.get(name, {}).get("captura", {}).get("hands", []):
-                if hand_info.get("type"):
-                    hand_type = f" ({hand_info.get('type')})"
-                    break
+            # Get hand information including direction
+            hand_info = []
+            for hand_data in self.detector.gestures.get(name, {}).get("captura", {}).get("hands", []):
+                hand_type = hand_data.get("type", "Unknown")
+                direction = hand_data.get("direction", "unknown")
+                hand_info.append(f"{hand_type} hand ({direction})")
+            
+            hand_type_str = ""
+            if hand_info:
+                hand_type_str = f" - {', '.join(hand_info)}"
             
             ttk.Label(frame, 
-                     text=f"{name}{hand_type}: {info['similaridade']:.2f}",
+                     text=f"{name}: {info['similaridade']:.2f}",
                      font=("Arial", 10, "bold")).pack(anchor=tk.W)
             
             ttk.Label(frame, 
                      text=f"Description: {info['descricao']}").pack(anchor=tk.W)
+            
+            if hand_info:
+                ttk.Label(frame, 
+                         text=f"Hand info: {', '.join(hand_info)}",
+                         foreground="blue").pack(anchor=tk.W)
             
             if info.get("acao"):
                 action = info["acao"]

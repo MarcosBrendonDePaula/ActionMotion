@@ -4,7 +4,7 @@
     "confidence_threshold": 0.9,
     "show_fps": true,
     "show_landmarks": true,
-    "show_actions": true,
+    "show_actions": false,
     "last_camera_index": 1,
     "target_fps": 30
 }

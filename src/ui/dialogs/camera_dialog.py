@@ -2,63 +2,92 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 import cv2
 
-def change_camera(root, current_camera_index):
+# --- cache global -----------------------------------------------------------
+# cam_cache = {índice: "Available" | "Unavailable (...)"}  --------------------
+cam_cache: dict[int, str] = {}
+
+
+def probe_camera(idx: int) -> str:
+    """Testa se a câmera em `idx` abre e devolve frames."""
+    cap = cv2.VideoCapture(idx, cv2.CAP_DSHOW)          # CAP_DSHOW = +rápido no Windows
+    if not cap.isOpened():
+        cap.release()
+        return "Unavailable (cannot open)"
+    ok, _ = cap.read()
+    cap.release()
+    return "Available" if ok else "Unavailable (no frames)"
+
+
+def get_cameras(max_ports: int = 20, force_refresh: bool = False) -> dict[int, str]:
     """
-    Show dialog to change the camera.
-    
-    Parameters:
-    - root: Tkinter root window
-    - current_camera_index: current camera index
-    
-    Returns:
-    - new camera index
+    Devolve um dicionário com as portas disponíveis.  
+    Usa o cache salvo em `cam_cache`; passe `force_refresh=True`
+    para refazer a detecção.
     """
-    # Select new camera
-    cameras = {}
-    for i in range(3):  # Check first 3 cameras
-        try:
-            cap = cv2.VideoCapture(i)
-            if cap.isOpened():
-                ret, frame = cap.read()
-                if ret:
-                    cameras[i] = "Available"
-                else:
-                    cameras[i] = "Unavailable (No frames received)"
-            cap.release()
-        except Exception as e:
-            print(f"Error checking camera {i}: {e}")
-    
+    for i in range(max_ports):
+        if force_refresh or i not in cam_cache:
+            cam_cache[i] = probe_camera(i)
+
+    # mantém no retorno apenas as que abriram de fato
+    return {i: st for i, st in cam_cache.items() if st == "Available"}
+
+
+# --------------------------------------------------------------------------- #
+def change_camera(root: tk.Tk, current_camera_index: int,
+                  force_refresh: bool = False) -> int:
+    """
+    Mostra o diálogo de seleção de câmera e devolve o índice escolhido.
+    """
+    cameras = get_cameras(force_refresh=force_refresh)
+
     if not cameras:
-        messagebox.showerror("Camera Error", "No cameras found. Using default camera (0).")
+        messagebox.showerror("Camera Error",
+                             "Nenhuma câmera encontrada. Usando a padrão (0).")
         return 0
-    
-    # Create camera selection dialog
-    camera_dialog = tk.Toplevel(root)
-    camera_dialog.title("Select Camera")
-    camera_dialog.geometry("300x200")
-    camera_dialog.transient(root)
-    camera_dialog.grab_set()
-    
-    ttk.Label(camera_dialog, text="Available Cameras", 
-             font=("Arial", 12, "bold")).pack(pady=10)
-    
+
+    # ------------------ diálogo ---------------------------------------------
+    dlg = tk.Toplevel(root)
+    dlg.title("Selecionar Câmera")
+    dlg.geometry("320x240")
+    dlg.transient(root)
+    dlg.grab_set()
+
+    ttk.Label(dlg, text="Câmeras disponíveis",
+              font=("Arial", 12, "bold")).pack(pady=(10, 5))
+
+    # ------- frame com rolagem ----------
+    container = ttk.Frame(dlg)
+    container.pack(fill=tk.BOTH, expand=True)
+
+    canvas = tk.Canvas(container, highlightthickness=0)
+    vsb = ttk.Scrollbar(container, orient="vertical", command=canvas.yview)
+    canvas.configure(yscrollcommand=vsb.set)
+
+    vsb.pack(side=tk.RIGHT, fill=tk.Y)
+    canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+    scroll_frame = ttk.Frame(canvas)
+    canvas.create_window((0, 0), window=scroll_frame, anchor="nw")
+
+    # ajustar a região de rolagem sempre que o conteúdo mudar
+    scroll_frame.bind(
+        "<Configure>",
+        lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+    )
+
+    # ------------- rádios dentro do frame rolável ---------------------------
     camera_var = tk.IntVar(value=current_camera_index)
-    
-    for idx, status in cameras.items():
-        ttk.Radiobutton(camera_dialog, text=f"Camera {idx}: {status}", 
-                       variable=camera_var, value=idx).pack(anchor=tk.W, padx=20, pady=2)
-    
-    # Variable to store the result
-    result = [current_camera_index]
-    
-    def select_camera():
-        result[0] = camera_var.get()
-        camera_dialog.destroy()
-    
-    ttk.Button(camera_dialog, text="Select", 
-              command=select_camera).pack(pady=20)
-    
-    # Wait for dialog to close
-    root.wait_window(camera_dialog)
-    
-    return result[0]
+    for idx in sorted(cameras):
+        ttk.Radiobutton(
+            scroll_frame,
+            text=f"Câmera {idx}",
+            variable=camera_var,
+            value=idx
+        ).pack(anchor=tk.W, padx=18, pady=2)
+
+    # ---------------- botão confirmar --------------------------------------
+    ttk.Button(dlg, text="Selecionar",
+               command=lambda: dlg.destroy()).pack(pady=12)
+
+    root.wait_window(dlg)
+    return camera_var.get()

@@ -11,7 +11,7 @@ def list_cameras():
     """
     available_cameras = {}
     # Only check the first 3 cameras to speed up the process
-    for i in range(3):
+    for i in range(15):
         cap = cv2.VideoCapture(i)
         if cap.isOpened():
             ret, frame = cap.read()

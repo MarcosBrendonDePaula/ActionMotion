@@ -35,22 +35,29 @@ class MovementTracker:
         self.mp_hands = mp.solutions.hands
         self.mp_drawing = mp.solutions.drawing_utils
         self.mp_styles = mp.solutions.drawing_styles
+        
+        # Initialize with static_image_mode=True to handle the timestamp issue
+        # This forces MediaPipe to process each frame independently without tracking
+        # which avoids the timestamp dependency between frames
         self.hands = self.mp_hands.Hands(
-            static_image_mode=self.static_mode,
+            static_image_mode=True,  # Force static mode to avoid timestamp issues
             max_num_hands=self.max_hands,
             model_complexity=self.model_complexity,
             min_detection_confidence=self.detection_confidence,
             min_tracking_confidence=self.tracking_confidence
         )
         
-        # Initialize pose module
+        # Initialize pose module with static mode as well
         self.mp_pose = mp.solutions.pose
         self.pose = self.mp_pose.Pose(
-            static_image_mode=self.static_mode,
+            static_image_mode=True,  # Force static mode to avoid timestamp issues
             model_complexity=self.model_complexity,
             min_detection_confidence=self.detection_confidence,
             min_tracking_confidence=self.tracking_confidence
         )
+        
+        # Store the original static_mode value for reference
+        self.original_static_mode = self.static_mode
         
         # Variables for FPS calculation
         self.current_time = 0
